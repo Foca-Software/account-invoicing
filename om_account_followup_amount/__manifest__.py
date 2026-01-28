@@ -9,7 +9,7 @@
     'website': 'https://odoo.calyx-cloud.com.ar/',
     'license': 'AGPL-3',
     'category': 'Accounting',
-    'version': '13.0.1.0.0',
+    'version': "18.0.1.0.0",
     'application': False,
     'installable': True,
     'depends': ['om_account_followup',],

@@ -10,7 +10,7 @@
     "website": "http://odoo.calyx-cloud.com.ar/",
     "license": "AGPL-3",
     "category": "Account",
-    "version": "13.0.1.0.0",
+    "version": "18.0.1.0.0",
     "depends": [
         "account_invoice_inter_company", 
     ],

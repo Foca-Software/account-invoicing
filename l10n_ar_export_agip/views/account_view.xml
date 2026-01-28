@@ -36,24 +36,24 @@
 	</record>
 	
 	<record id="view_account_export_agip" model="ir.ui.view">
-	    <field name="name">account.export.agip.tree</field>
+	    <field name="name">account.export.agip.list</field>
 	    <field name="model">account.export.agip</field>
 	    <field name="arch" type="xml">
-	        <tree>
+	        <list>
 	            <field name="export_agip_filename"/>
 	            <field name="date_from"/>
 	            <field name="date_to"/>
 	            <field name="doc_type"/>
 	            <field name="period"/>
 	            <field name="fortnight"/>
-	        </tree>
+	        </list>
 	    </field>
 	</record>
 	
 	<record id="action_account_export_agip" model="ir.actions.act_window">
 	    <field name="name">Export AGIP</field>
 	    <field name="res_model">account.export.agip</field>
-	    <field name="view_mode">tree,form</field>
+	    <field name="view_mode">list,form</field>
 	</record>
 	
 	<menuitem id="menu_account_export_agip"

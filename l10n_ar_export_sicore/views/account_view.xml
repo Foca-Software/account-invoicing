@@ -37,10 +37,10 @@
 	</record>
 
 	<record id="view_account_export_sicore" model="ir.ui.view">
-		<field name="name">account.export.sicore.tree</field>
+		<field name="name">account.export.sicore.list</field>
 		<field name="model">account.export.sicore</field>
 		<field name="arch" type="xml">
-			<tree>
+			<list>
 				<field name="export_sicore_filename"/>
 				<field name="company_id"/>
 				<field name="date_from"/>
@@ -49,14 +49,14 @@
 				<field name="period"/>
 				<field name="fortnight"/>
 				<field name="final_line_break"/>
-			</tree>
+			</list>
 		</field>
 	</record>
 	
 	<record id="action_account_export_sicore" model="ir.actions.act_window">
 		<field name="name">Export Sicore</field>
 		<field name="res_model">account.export.sicore</field>
-		<field name="view_mode">tree,form</field>
+		<field name="view_mode">list,form</field>
 	</record>
 	
 	<menuitem id="menu_account_export_sicore"
