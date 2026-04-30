@@ -158,16 +158,14 @@ class AccountExportArba(models.Model):
         payments = payment_obj.search([
             ('payment_date', '>=', self.date_from),
             ('payment_date', '<=', self.date_to),
-            ('state', '=', 'posted')
+            ('state', 'in', ['posted', 'paid'])
         ])
         
         ret = payment_obj      
         for pay in payments:
-            for line in pay.payment_ids:
-                if line.payment_method_id.code == 'withholding':
-                    for tax_line in line.tax_withholding_id.invoice_repartition_line_ids:
-                        if retARBA in tax_line.tag_ids.ids and jurARBA in tax_line.tag_ids.ids:
-                            ret += pay
+            for withholding_line_id in pay.payment_ids.l10n_ar_withholding_line_ids:
+                if retARBA in withholding_line_id.tax_id.repartition_line_ids.tag_ids.ids and jurARBA in withholding_line_id.tax_id.repartition_line_ids.tag_ids.ids:
+                    ret += pay
         
         return ret
 
@@ -179,11 +177,11 @@ class AccountExportArba(models.Model):
         invoices = invoice_obj.search([
             ('invoice_date', '>=', self.date_from),
             ('invoice_date', '<=', self.date_to),
-            ('type', 'in', ['out_invoice','out_refund']),
+            ('move_type', 'in', ['out_invoice','out_refund']),
             ('state', '=', 'posted')
         ])
         
-        per = invoice_obj      
+        per = invoice_obj
         for inv in invoices:
             for line in inv.invoice_line_ids:
                 for tax in line.tax_ids:
@@ -197,7 +195,7 @@ class AccountExportArba(models.Model):
         line = ''
         account_tag_obj = self.env['account.account.tag']
         arba_imp = self.env.ref("l10n_ar_ux.tag_ret_perc_iibb_aplicada")
-        arba_jur = self.env.ref("l10n_ar_ux.tag_tax_jurisdiccion_902")
+        arba_jur = self.env.ref("l10n_ar_perception_automatic.tag_tax_jurisdiccion_902")
         impARBA = account_tag_obj.search([('id', '=', arba_imp.id)]).id
         jurARBA = account_tag_obj.search([('id', '=', arba_jur.id)]).id
         for rec in self:
@@ -205,39 +203,60 @@ class AccountExportArba(models.Model):
                 # Retenciones
                 payments = self.get_withholding_payments(impARBA, jurARBA)
                 data = []
-                for payment in payments:       
-                    # Campo 01 -- Cuit contribuyente retenido len 13
+                for payment in payments:
+                    line = ''
+                    # Campo 01 -- Número de emisión len 20
+                    name_pay = payment.display_name  # 'REC0001-00000183'
+                    parts = name_pay.split('-')
+
+                    if len(parts) >= 2:
+                        code_issue = parts[1]
+                        code_office = parts[0][-4:]
+                    else:
+                        code_issue = '00000000'
+                        code_office = '0000'
+                    line += str(code_issue).zfill(20)
+
+                    # Campo 02 -- Cuit contribuyente retenido len 11
                     try:
-                        cuit = payment.partner_id.vat[:2] + "-" + payment.partner_id.vat[2:-1] + "-" + payment.partner_id.vat[-1:]
+                        cuit = payment.partner_id.vat
                     except Exception:
                         raise UserError(_('Partner does not have a loaded cuit.'))
-                    line = cuit.zfill(13)
+                    line += cuit.zfill(11)
 
-                    # Campo 02 -- Fecha de retención len 10
+                    # Campo 03 -- Número de sucursal len 5
+                    line += str(code_office).zfill(5)
+
+                    # Campo 04 -- Fecha de retención len 10
                     _date = payment.payment_date.strftime('%d/%m/%Y')
                     line += _date
 
-                    # Campo 03 -- Número de sucursal len 4
-                    # Campo 04 -- Número de emisión len 8
-                    name_pay = payment.display_name.split(' ')
-                    if len(name_pay) > 0:
-                        code_office = name_pay[1][:4]
-                        code_issue = name_pay[1][5:]
-                    else:
-                        code_office = 0
-                        code_issue = 0
-                    line += str(code_office).zfill(4)
-                    line += str(code_issue).zfill(8)
-                    
-                    # Campo 5 Importe de la retencion len 11
-                    for pay_line in payment.payment_ids:
-                        if pay_line.payment_method_id.code == 'withholding':
-                            amount_ret = '{:.2f}'.format(pay_line.amount)
-                            amount_ret = amount_ret.replace('.', ',')
-                            line += str(amount_ret).zfill(11)
 
-                    # Campo 6 Tipo Operación len 1
-                    line += 'A'
+                    # campo 5 alicuota len 5
+                    refinery_alicuot = payment.partner_id.arba_alicuot_ids.filtered(lambda a: not a.is_refinery_alicuot
+                                        and a.to_date and a.to_date.month == self.month
+                                    )[0]
+                    alicuota_perception = refinery_alicuot.alicuota_percepcion
+                    alicuota_formatted = f"{alicuota_perception:05.2f}".replace('.', ',')
+                    line += str(alicuota_formatted)
+
+                    # Campo 6 base imponible len 16
+
+                    withholding_line_ids = payment.payment_ids.l10n_ar_withholding_line_ids
+                    for withholding_line_id in withholding_line_ids:
+                        if impARBA in withholding_line_id.tax_id.repartition_line_ids.tag_ids.ids and jurARBA in withholding_line_id.tax_id.repartition_line_ids.tag_ids.ids:
+                            line += str(withholding_line_id.base_amount).zfill(16)
+
+
+                    # # Campo 5 Importe de la retencion len 11
+                    # for pay_line in payment.payment_ids:
+                    #     if pay_line.payment_method_id.code == 'withholding':
+                    #         amount_ret = '{:.2f}'.format(pay_line.amount)
+                    #         amount_ret = amount_ret.replace('.', ',')
+                    #         line += str(amount_ret).zfill(11)
+
+                    # # Campo 6 Tipo Operación len 1
+                    # line += 'A'
                     
                     data.append(line)
             else:
