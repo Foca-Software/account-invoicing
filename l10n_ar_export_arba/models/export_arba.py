@@ -185,10 +185,11 @@ class AccountExportArba(models.Model):
         for inv in invoices:
             for line in inv.invoice_line_ids:
                 for tax in line.tax_ids:
-                    for tax_line in tax.invoice_repartition_line_ids:
-                        if percARBA in tax_line.tag_ids.ids and jurARBA in tax_line.tag_ids.ids:
-                            per += inv
-                            
+                    if tax.report_usage == 'general':
+                        for tax_line in tax.invoice_repartition_line_ids:
+                            if percARBA in tax_line.tag_ids.ids and jurARBA in tax_line.tag_ids.ids:
+                                per += inv
+
         return per
 
     def compute_arba_data(self):
