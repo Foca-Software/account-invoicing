@@ -237,7 +237,7 @@ class AccountExportArba(models.Model):
                     refinery_alicuot = payment.partner_id.arba_alicuot_ids.filtered(lambda a: not a.is_refinery_alicuot
                                         and a.to_date and a.to_date.month == self.month
                                     )[0]
-                    alicuota_perception = refinery_alicuot.alicuota_percepcion
+                    alicuota_perception = refinery_alicuot.alicuota_retencion
                     alicuota_formatted = f"{alicuota_perception:05.2f}".replace('.', ',')
                     line += str(alicuota_formatted)
 
