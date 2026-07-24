@@ -161,12 +161,14 @@ class AccountExportArba(models.Model):
             ('state', 'in', ['posted', 'paid'])
         ])
         
-        ret = payment_obj      
+        ret = payment_obj
         for pay in payments:
-            for withholding_line_id in pay.payment_ids.l10n_ar_withholding_line_ids:
-                if retARBA in withholding_line_id.tax_id.repartition_line_ids.tag_ids.ids and jurARBA in withholding_line_id.tax_id.repartition_line_ids.tag_ids.ids:
-                    ret += pay
-        
+            if any(
+                retARBA in wl.tax_id.repartition_line_ids.tag_ids.ids and jurARBA in wl.tax_id.repartition_line_ids.tag_ids.ids
+                for wl in pay.payment_ids.l10n_ar_withholding_line_ids
+            ):
+                ret += pay
+
         return ret
 
     def get_perception_invoices(self, percARBA, jurARBA):
@@ -236,7 +238,18 @@ class AccountExportArba(models.Model):
                     # campo 5 alicuota len 5
                     refinery_alicuot = payment.partner_id.arba_alicuot_ids.filtered(lambda a: not a.is_refinery_alicuot
                                         and a.to_date and a.to_date.month == self.month
-                                    )[0]
+                                    )[:1]
+                    if not refinery_alicuot:
+                        raise UserError(_(
+                            'El contribuyente %(partner)s (CUIT %(vat)s) no tiene una alícuota ARBA de '
+                            'retención cargada para el período %(month)s/%(year)s. Actualizá el padrón de '
+                            'este partner antes de exportar.'
+                        ) % {
+                            'partner': payment.partner_id.display_name,
+                            'vat': payment.partner_id.vat or '-',
+                            'month': self.month,
+                            'year': self.year,
+                        })
                     alicuota_perception = refinery_alicuot.alicuota_retencion
                     alicuota_formatted = f"{alicuota_perception:05.2f}".replace('.', ',')
                     line += str(alicuota_formatted)
@@ -244,9 +257,11 @@ class AccountExportArba(models.Model):
                     # Campo 6 base imponible len 16
 
                     withholding_line_ids = payment.payment_ids.l10n_ar_withholding_line_ids
-                    for withholding_line_id in withholding_line_ids:
-                        if impARBA in withholding_line_id.tax_id.repartition_line_ids.tag_ids.ids and jurARBA in withholding_line_id.tax_id.repartition_line_ids.tag_ids.ids:
-                            line += str(withholding_line_id.base_amount).zfill(16)
+                    base_amount = sum(
+                        wl.base_amount for wl in withholding_line_ids
+                        if impARBA in wl.tax_id.repartition_line_ids.tag_ids.ids and jurARBA in wl.tax_id.repartition_line_ids.tag_ids.ids
+                    )
+                    line += str(base_amount).zfill(16)
 
 
                     # # Campo 5 Importe de la retencion len 11
