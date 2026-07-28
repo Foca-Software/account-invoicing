@@ -102,8 +102,6 @@ class AccountExportArba(models.Model):
         Given the month and the year calculate the first and last day of the period
         """
         for rec in self:
-            if rec.doc_type == WITHHOLDING:
-                rec.fortnight = '0'
 
             month = rec.month
             year = int(rec.year)
@@ -158,7 +156,8 @@ class AccountExportArba(models.Model):
         payments = payment_obj.search([
             ('payment_date', '>=', self.date_from),
             ('payment_date', '<=', self.date_to),
-            ('state', 'in', ['posted', 'paid'])
+            ('state', 'in', ['posted', 'paid']),
+            ('partner_type', '=', "supplier")
         ])
         
         ret = payment_obj
