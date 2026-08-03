@@ -62,6 +62,10 @@ class AccountExportArba(models.Model):
     export_arba_data = fields.Text(
         'File content'
     )
+    export_arba_errors = fields.Text(
+        'Errores de exportación',
+        readonly=True,
+    )
     export_arba_file = fields.Binary(
         'Download File',
         compute="_compute_files",
@@ -201,143 +205,151 @@ class AccountExportArba(models.Model):
         impARBA = account_tag_obj.search([('id', '=', arba_imp.id)]).id
         jurARBA = account_tag_obj.search([('id', '=', arba_jur.id)]).id
         for rec in self:
+            errors = []
             if rec.doc_type == WITHHOLDING:
                 # Retenciones
                 payments = self.get_withholding_payments(impARBA, jurARBA)
                 data = []
                 for payment in payments:
-                    line = ''
-                    # Campo 01 -- Número de emisión len 20
-                    name_pay = payment.display_name  # 'REC0001-00000183'
-                    parts = name_pay.split('-')
-
-                    if len(parts) >= 2:
-                        code_issue = parts[1]
-                        code_office = parts[0][-4:]
-                    else:
-                        code_issue = '00000000'
-                        code_office = '0000'
-                    line += str(code_issue).zfill(20)
-
-                    # Campo 02 -- Cuit contribuyente retenido len 11
                     try:
-                        cuit = payment.partner_id.vat
-                    except Exception:
-                        raise UserError(_('Partner does not have a loaded cuit.'))
-                    line += cuit.zfill(11)
+                        line = ''
+                        # Campo 01 -- Número de emisión len 20
+                        name_pay = payment.display_name  # 'REC0001-00000183'
+                        parts = name_pay.split('-')
 
-                    # Campo 03 -- Número de sucursal len 5
-                    line += str(code_office).zfill(5)
+                        if len(parts) >= 2:
+                            code_issue = parts[1]
+                            code_office = parts[0][-4:]
+                        else:
+                            code_issue = '00000000'
+                            code_office = '0000'
+                        line += str(code_issue).zfill(20)
 
-                    # Campo 04 -- Fecha de retención len 10
-                    _date = payment.payment_date.strftime('%d/%m/%Y')
-                    line += _date
+                        # Campo 02 -- Cuit contribuyente retenido len 11
+                        try:
+                            cuit = payment.partner_id.vat
+                        except Exception:
+                            raise UserError(_(f'El contacto {payment.partner_id.name} - id {payment.partner_id.id} no tiene CUIT'))
+                        line += cuit.zfill(11)
 
+                        # Campo 03 -- Número de sucursal len 5
+                        line += str(code_office).zfill(5)
 
-                    # campo 5 alicuota len 5
-                    refinery_alicuot = payment.partner_id.arba_alicuot_ids.filtered(lambda a: not a.is_refinery_alicuot
-                                        and a.to_date and a.to_date.month == self.month
-                                    )[:1]
-                    if not refinery_alicuot:
-                        raise UserError(_(
-                            'El contribuyente %(partner)s (CUIT %(vat)s) no tiene una alícuota ARBA de '
-                            'retención cargada para el período %(month)s/%(year)s. Actualizá el padrón de '
-                            'este partner antes de exportar.'
-                        ) % {
-                            'partner': payment.partner_id.display_name,
-                            'vat': payment.partner_id.vat or '-',
-                            'month': self.month,
-                            'year': self.year,
-                        })
-                    alicuota_perception = refinery_alicuot.alicuota_retencion
-                    alicuota_formatted = f"{alicuota_perception:05.2f}".replace('.', ',')
-                    line += str(alicuota_formatted)
-
-                    # Campo 6 base imponible len 16
-
-                    withholding_line_ids = payment.payment_ids.l10n_ar_withholding_line_ids
-                    base_amount = sum(
-                        wl.base_amount for wl in withholding_line_ids
-                        if impARBA in wl.tax_id.repartition_line_ids.tag_ids.ids and jurARBA in wl.tax_id.repartition_line_ids.tag_ids.ids
-                    )
-                    line += str(base_amount).zfill(16)
+                        # Campo 04 -- Fecha de retención len 10
+                        _date = payment.payment_date.strftime('%d/%m/%Y')
+                        line += _date
 
 
-                    # # Campo 5 Importe de la retencion len 11
-                    # for pay_line in payment.payment_ids:
-                    #     if pay_line.payment_method_id.code == 'withholding':
-                    #         amount_ret = '{:.2f}'.format(pay_line.amount)
-                    #         amount_ret = amount_ret.replace('.', ',')
-                    #         line += str(amount_ret).zfill(11)
+                        # campo 5 alicuota len 5
+                        refinery_alicuot = payment.partner_id.arba_alicuot_ids.filtered(lambda a: not a.is_refinery_alicuot
+                                            and a.to_date and a.to_date.month == self.month
+                                        )[:1]
+                        if not refinery_alicuot:
+                            raise UserError(_(
+                                'El contribuyente %(partner)s (CUIT %(vat)s) no tiene una alícuota ARBA de '
+                                'retención cargada para el período %(month)s/%(year)s. Actualizá el padrón de '
+                                'este partner antes de exportar.'
+                            ) % {
+                                'partner': payment.partner_id.display_name,
+                                'vat': payment.partner_id.vat or '-',
+                                'month': self.month,
+                                'year': self.year,
+                            })
+                        alicuota_perception = refinery_alicuot.alicuota_retencion
+                        alicuota_formatted = f"{alicuota_perception:05.2f}".replace('.', ',')
+                        line += str(alicuota_formatted)
 
-                    # # Campo 6 Tipo Operación len 1
-                    # line += 'A'
-                    
-                    data.append(line)
+                        # Campo 6 base imponible len 16
+
+                        withholding_line_ids = payment.payment_ids.l10n_ar_withholding_line_ids
+                        base_amount = sum(
+                            wl.base_amount for wl in withholding_line_ids
+                            if impARBA in wl.tax_id.repartition_line_ids.tag_ids.ids and jurARBA in wl.tax_id.repartition_line_ids.tag_ids.ids
+                        )
+                        line += str(base_amount).zfill(16)
+
+
+                        # # Campo 5 Importe de la retencion len 11
+                        # for pay_line in payment.payment_ids:
+                        #     if pay_line.payment_method_id.code == 'withholding':
+                        #         amount_ret = '{:.2f}'.format(pay_line.amount)
+                        #         amount_ret = amount_ret.replace('.', ',')
+                        #         line += str(amount_ret).zfill(11)
+
+                        # # Campo 6 Tipo Operación len 1
+                        # line += 'A'
+
+                        data.append(line)
+                    except Exception as e:
+                        errors.append('%s: %s' % (payment.display_name, str(e)))
             else:
                 # Percepciones
                 invoices = self.get_perception_invoices(impARBA, jurARBA)
                 data = []
                 for invoice in invoices:
-                    # Campo 01 -- Cuit contribuyente percibido len 13
                     try:
-                        cuit = invoice.partner_id.vat[:2] + "-" + invoice.partner_id.vat[2:-1] + "-" + invoice.partner_id.vat[-1:]
-                    except Exception:
-                        raise UserError(_('Partner does not have a loaded cuit.'))
-                    line = cuit.zfill(13)
-                    
-                    # Campo 02 -- Fecha de percepción len 10
-                    _date = invoice.invoice_date.strftime('%d/%m/%Y')
-                    line += _date
-                    
-                    # Campo 03 -- Tipo de comprobante len 1
-                    # Campo 04 -- Letra de comprobante len 1
-                    # Campo 05 -- Número sucursal len 4
-                    # Campo 06 -- Número emisión len 8
-                    code_prefix = ' '
-                    code_letter = ' '
-                    code_office = 0
-                    code_issue = 0
-                    doc_name = invoice.name.split(' ')
-                    if len(doc_name) > 0:
-                        doc_type = doc_name[0].split('-')
-                        code_prefix = DOCUMENT_TYPES.get(doc_type[0],'F')
-                        code_letter = doc_type[1]
-                        doc_number = doc_name[1].split('-')
-                        code_office = doc_number[0][-4:]
-                        code_issue = doc_number[1]
-                        
-                    line += str(code_prefix)
-                    line += str(code_letter)
-                    line += str(code_office)
-                    line += str(code_issue)
-                    
-                    amount = 0
-                    for inv_line in invoice.line_ids:
-                        if impARBA in inv_line.tag_ids.ids and jurARBA in inv_line.tag_ids.ids:
-                            if code_prefix == 'C' or code_prefix == 'H':
-                                amount = inv_line.debit
-                            else:
-                                amount = inv_line.credit
-                    
-                    # Campo 07 -- Monto imponible len 12
-                    # Campo 08 -- Importe de Percepción len 11
-                    amount_untaxed = '{:.2f}'.format(invoice.amount_untaxed)
-                    amount_untaxed = amount_untaxed.replace('.', ',')
-                    amount_tax = '{:.2f}'.format(amount)
-                    amount_tax = amount_tax.replace('.', ',')
-                    if code_prefix == 'C' or code_prefix == 'H':
-                        sign = '-'
-                        line += sign + str(amount_untaxed).zfill(11)
-                        line += sign + str(amount_tax).zfill(10)
-                    else:
-                        line += str(amount_untaxed).zfill(12)
-                        line += str(amount_tax).zfill(11)
-                    
-                    # Campo 09 -- Tipo Operación len 1
-                    line += 'A'
-                    
-                    data.append(line)
-            
+                        # Campo 01 -- Cuit contribuyente percibido len 13
+                        try:
+                            cuit = invoice.partner_id.vat[:2] + "-" + invoice.partner_id.vat[2:-1] + "-" + invoice.partner_id.vat[-1:]
+                        except Exception:
+                            raise UserError(_(f'El contacto {invoice.partner_id.name} - id {invoice.partner_id.id} no tiene CUIT'))
+                        line = cuit.zfill(13)
+
+                        # Campo 02 -- Fecha de percepción len 10
+                        _date = invoice.invoice_date.strftime('%d/%m/%Y')
+                        line += _date
+
+                        # Campo 03 -- Tipo de comprobante len 1
+                        # Campo 04 -- Letra de comprobante len 1
+                        # Campo 05 -- Número sucursal len 4
+                        # Campo 06 -- Número emisión len 8
+                        code_prefix = ' '
+                        code_letter = ' '
+                        code_office = 0
+                        code_issue = 0
+                        doc_name = invoice.name.split(' ')
+                        if len(doc_name) > 0:
+                            doc_type = doc_name[0].split('-')
+                            code_prefix = DOCUMENT_TYPES.get(doc_type[0],'F')
+                            code_letter = doc_type[1]
+                            doc_number = doc_name[1].split('-')
+                            code_office = doc_number[0][-4:]
+                            code_issue = doc_number[1]
+
+                        line += str(code_prefix)
+                        line += str(code_letter)
+                        line += str(code_office)
+                        line += str(code_issue)
+
+                        amount = 0
+                        for inv_line in invoice.line_ids:
+                            if impARBA in inv_line.tag_ids.ids and jurARBA in inv_line.tag_ids.ids:
+                                if code_prefix == 'C' or code_prefix == 'H':
+                                    amount = inv_line.debit
+                                else:
+                                    amount = inv_line.credit
+
+                        # Campo 07 -- Monto imponible len 12
+                        # Campo 08 -- Importe de Percepción len 11
+                        amount_untaxed = '{:.2f}'.format(invoice.amount_untaxed)
+                        amount_untaxed = amount_untaxed.replace('.', ',')
+                        amount_tax = '{:.2f}'.format(amount)
+                        amount_tax = amount_tax.replace('.', ',')
+                        if code_prefix == 'C' or code_prefix == 'H':
+                            sign = '-'
+                            line += sign + str(amount_untaxed).zfill(11)
+                            line += sign + str(amount_tax).zfill(10)
+                        else:
+                            line += str(amount_untaxed).zfill(12)
+                            line += str(amount_tax).zfill(11)
+
+                        # Campo 09 -- Tipo Operación len 1
+                        line += 'A'
+
+                        data.append(line)
+                    except Exception as e:
+                        errors.append('%s: %s' % (invoice.display_name, str(e)))
+
             rec.export_arba_data = '\n'.join(data)
+            rec.export_arba_errors = '\n'.join(errors) if errors else False
 
